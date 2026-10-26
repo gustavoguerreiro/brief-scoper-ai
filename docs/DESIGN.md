@@ -271,3 +271,17 @@ Cost targets:
 | 7 | Approved outputs are kept out of the corpus by default. |
 
 Still open (will flag when reached): citation-to-estimate derivation rule (M2), Alembic vs raw SQL migrations (decided in M1: **Alembic deferred to M2**, when tables first exist).
+
+---
+
+## 12. Implementation notes and deviations (M2)
+
+- **Lexical search:** `rank_bm25` runs in-process over the filtered chunks, so the `tsv` column and GIN index from section 3 were not created.
+- **Migrations:** raw `db/schema.sql` applied by `PgStore.init_schema()`, not Alembic (two tables, no schema history yet). Revisit when `runs`/`outputs` tables arrive.
+- **Embeddings:** a separate `Embedder` protocol (`llm/embeddings.py`) instead of `ModelClient.embed`; same idea (one seam, a fake for tests). OpenAI SDK retries are left on for embeddings; Anthropic retries are owned by `RetryingClient`.
+- **Eval hygiene:** leave-one-out is `Filters.exclude_brief_ids`; the `is_eval_holdout` column was not created.
+- **Permission-style filter:** `Filters.visibility` (default `("team",)`); private briefs are never returned unless the caller widens it. In a real system this value comes from authentication, not from the request body, and the API never exposes it.
+- **Estimate verification rule (was open):** an estimate must cite at least one source, and its range must lie within 0.5x the smallest and 2x the largest `actual_hours` (or `actual_cost` for usd) of the cited projects. The factors are arbitrary starting values, to be tuned with the M3 eval set.
+- **Abstention:** with no retrieved sources the model is told to return `estimate: null`, and code drops any invented estimate. Score-threshold abstention is deferred to M3, where it can be calibrated instead of guessed.
+- **Approval workflow and `runs`/`outputs`/`human_edits` tables:** not in M2 (the milestone list does not include them); planned before M6, where the human-approval interrupt needs them.
+- **Port:** Compose publishes Postgres on host port 5440 because 5432 and 5433 are used by other containers on this machine.

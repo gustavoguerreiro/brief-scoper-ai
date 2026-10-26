@@ -40,3 +40,53 @@ class ScopeResponse(BaseModel):
     cost_usd: float
     llm_calls: int
     latency_ms: float
+
+
+# ---- M2: grounded output (every claim can carry verifiable citations) ----
+
+
+class Citation(BaseModel):
+    chunk_id: str
+    quote: str
+
+
+class CitedRisk(Risk):
+    citations: list[Citation] = Field(default_factory=list)  # empty = model's own judgment
+
+
+class CitedEstimate(Estimate):
+    citations: list[Citation] = Field(default_factory=list)
+
+
+class CitedScopeOutput(BaseModel):
+    summary: str = Field(min_length=1)
+    open_questions: list[str]
+    risks: list[CitedRisk]
+    estimate: CitedEstimate | None
+    insufficient_info: list[str] = Field(default_factory=list)
+    confidence: Literal["low", "medium", "high"]
+
+
+class GroundedRequest(BaseModel):
+    brief: str = Field(min_length=20, max_length=20_000)
+    industry: list[str] = Field(default_factory=list)
+    project_type: list[str] = Field(default_factory=list)
+    top_k: int = Field(default=5, ge=1, le=10)
+
+
+class SourceInfo(BaseModel):
+    chunk_id: str
+    brief_id: str
+    title: str
+    section: str
+    score: float
+
+
+class GroundedResponse(BaseModel):
+    run_id: str
+    output: CitedScopeOutput
+    sources: list[SourceInfo]
+    dropped: list[str]
+    cost_usd: float
+    llm_calls: int
+    latency_ms: float

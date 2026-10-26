@@ -11,7 +11,7 @@ import logging
 import random
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -33,7 +33,7 @@ class ModelRequest:
     model: str
     system: str
     messages: list[dict]  # [{"role": "user"|"assistant", "content": str}]
-    max_tokens: int = 2000
+    max_tokens: int = 4000
     purpose: str = "generate"
     run_id: str = ""
 
@@ -47,6 +47,7 @@ class ModelResponse:
     latency_ms: float = 0.0
     request_id: str = ""
     cost_usd: float = 0.0
+    stop_reason: str = ""  # end_turn | max_tokens | ... (provider value)
 
 
 class ModelClient(Protocol):
@@ -122,6 +123,7 @@ class AnthropicClient:
             output_tokens=resp.usage.output_tokens,
             latency_ms=(time.perf_counter() - start) * 1000,
             request_id=getattr(resp, "_request_id", "") or "",
+            stop_reason=resp.stop_reason or "",
         )
 
 
@@ -137,6 +139,7 @@ class CallRecord:
     status: str  # ok | error
     error: str = ""
     request_id: str = ""
+    stop_reason: str = ""
 
 
 @dataclass
@@ -159,6 +162,8 @@ class CallLog:
             rec.latency_ms,
             rec.status,
         )
+        if rec.stop_reason == "max_tokens":
+            logger.warning("llm_call run=%s hit max_tokens: output truncated", rec.run_id)
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as f:
@@ -196,15 +201,7 @@ class LoggedClient:
             raise
         latency = (time.perf_counter() - start) * 1000
         cost = compute_cost(self._prices, resp.model, resp.input_tokens, resp.output_tokens)
-        resp = ModelResponse(
-            resp.text,
-            resp.model,
-            resp.input_tokens,
-            resp.output_tokens,
-            latency,
-            resp.request_id,
-            cost,
-        )
+        resp = replace(resp, latency_ms=latency, cost_usd=cost)
         self._log.add(
             CallRecord(
                 req.run_id,
@@ -216,6 +213,7 @@ class LoggedClient:
                 latency,
                 "ok",
                 request_id=resp.request_id,
+                stop_reason=resp.stop_reason,
             )
         )
         return resp

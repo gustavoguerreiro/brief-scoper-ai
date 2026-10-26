@@ -57,7 +57,7 @@ def test_repair_after_invalid_json_then_success():
     client, log, fake = make(["not json", GOOD])
     generate_scope(client, log, BRIEF, "r1", "fake-model")
     assert [r.purpose for r in log.for_run("r1")] == ["generate", "repair"]
-    assert "Error:" in fake.requests[1].messages[-1]["content"]
+    assert "Problems:" in fake.requests[1].messages[-1]["content"]
 
 
 def test_repair_after_schema_violation():

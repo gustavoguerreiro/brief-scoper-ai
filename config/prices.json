@@ -1,6 +1,19 @@
 {
-  "_source": "Anthropic list prices, USD per 1M tokens, as cached in the claude-api skill on 2026-10-06. NOT measured by me: verify against the provider pricing page before trusting cost numbers.",
-  "claude-sonnet-5-5": {"input": 2.00, "output": 10.00},
-  "claude-haiku-5-5": {"input": 0.10, "output": 0.50},
-  "claude-opus-5-5": {"input": 4.00, "output": 20.00}
+  "_source": "Anthropic list prices, USD per 1M tokens, as cached in the claude-api skill on 2026-10-06. NOT measured by me: verify against the provider pricing page before trusting cost numbers. Embedding price (text-embedding-3-small, $0.02 per 1M tokens) is from my memory of OpenAI's list price: UNVERIFIED.",
+  "claude-sonnet-5-5": {
+    "input": 2.0,
+    "output": 10.0
+  },
+  "claude-haiku-5-5": {
+    "input": 0.1,
+    "output": 0.5
+  },
+  "claude-opus-5-5": {
+    "input": 4.0,
+    "output": 20.0
+  },
+  "text-embedding-3-small": {
+    "input": 0.02,
+    "output": 0.0
+  }
 }

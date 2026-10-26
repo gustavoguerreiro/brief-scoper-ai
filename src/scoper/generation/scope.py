@@ -1,14 +1,18 @@
 """M1 baseline generation: one structured call + validation-repair loop.
 
-No retrieval yet, so the estimate is ungrounded; the prompt tells the model to say so.
+No retrieval, so the estimate is ungrounded; the prompt tells the model to say so.
+Kept as the baseline that the grounded pipeline (cited.py) is compared against in M3.
 """
 
 import json
-import re
 
-from pydantic import ValidationError
-
-from scoper.llm.client import CallLog, ModelClient, ModelRequest
+from scoper.generation.structured import (  # noqa: F401  (re-exported for callers/tests)
+    BudgetExceeded,
+    ScopeGenerationError,
+    parse_model,
+    structured_call,
+)
+from scoper.llm.client import CallLog, ModelClient
 from scoper.schemas import ScopeOutput
 
 SYSTEM_PROMPT = """You are a senior delivery lead who scopes software projects from client briefs.
@@ -28,20 +32,6 @@ Rules:
 - confidence reflects how much the brief actually tells you."""
 
 
-class ScopeGenerationError(Exception):
-    pass
-
-
-class BudgetExceeded(Exception):
-    pass
-
-
-def _extract_json(text: str) -> dict:
-    t = text.strip()
-    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t)
-    return json.loads(t)
-
-
 def generate_scope(
     client: ModelClient,
     log: CallLog,
@@ -52,32 +42,14 @@ def generate_scope(
     cost_cap_usd: float = 0.05,
 ) -> ScopeOutput:
     system = SYSTEM_PROMPT.format(schema=json.dumps(ScopeOutput.model_json_schema()))
-    messages = [{"role": "user", "content": f"<brief>\n{brief}\n</brief>"}]
-    last_error = ""
-    for attempt in range(max_repairs + 1):
-        if log.run_cost(run_id) >= cost_cap_usd:
-            raise BudgetExceeded(f"run {run_id} reached cap ${cost_cap_usd:.2f}")
-        resp = client.complete(
-            ModelRequest(
-                model=model,
-                system=system,
-                messages=messages,
-                purpose="generate" if attempt == 0 else "repair",
-                run_id=run_id,
-            )
-        )
-        try:
-            return ScopeOutput.model_validate(_extract_json(resp.text))
-        except (json.JSONDecodeError, ValidationError) as e:
-            last_error = str(e)[:500]
-            messages = messages + [
-                {"role": "assistant", "content": resp.text},
-                {
-                    "role": "user",
-                    "content": (
-                        "Your reply was not valid. Fix it and return ONLY the corrected JSON. "
-                        f"Error: {last_error}"
-                    ),
-                },
-            ]
-    raise ScopeGenerationError(f"invalid output after {max_repairs} repairs: {last_error}")
+    return structured_call(
+        client,
+        log,
+        system=system,
+        messages=[{"role": "user", "content": f"<brief>\n{brief}\n</brief>"}],
+        parse=parse_model(ScopeOutput),
+        run_id=run_id,
+        model=model,
+        max_repairs=max_repairs,
+        cost_cap_usd=cost_cap_usd,
+    )

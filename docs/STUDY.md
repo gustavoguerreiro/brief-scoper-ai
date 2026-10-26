@@ -19,6 +19,26 @@
 
 ---
 
+## M2. RAG over past briefs: hybrid retrieval and verified citations
+
+**Concept (plain language).** Instead of letting the model guess an estimate from its general knowledge, I first look up similar past projects and show them to the model, so its answer can point at evidence. Past briefs are cut into chunks, one or more per section. Each chunk is turned into an embedding, a list of numbers where similar meaning lands close together, and stored in Postgres with the pgvector extension. At query time I run two searches: a keyword search (BM25, which rewards rare matching words) and a vector search (which catches paraphrases). I merge both rankings with Reciprocal Rank Fusion, which only uses positions, so the two score scales never need to be compared. Filters on metadata (industry, type, visibility) are applied before ranking. The model must cite chunk ids with word-for-word quotes, and my code checks every citation, because a model can fabricate a citation as easily as a fact.
+
+**Trade-offs / when NOT to use.**
+- Hybrid search costs two pipelines and a fusion step. With a tiny corpus, either one alone may do as well. I will measure that in M3 instead of assuming hybrid wins.
+- Small chunks match precisely but lose context; big chunks keep context but dilute the match. I chunk by section and prefix each chunk with the brief title and section name as a cheap compromise.
+- Verifying that a quote exists proves nothing about whether it supports the claim. That needs a judge, and a judge has its own biases.
+- RAG is the wrong tool when the knowledge is small enough to fit in the prompt, when answers need reasoning over the whole corpus, or when stale documents are worse than no documents.
+- pgvector keeps vectors next to metadata and filters in one transactional store; a dedicated vector database only pays off at a scale this project does not have.
+
+**How I built it (system-design explanation).**
+- *Ingestion:* each brief is a markdown file with YAML front matter (industry, type, budget band, outcome, actual hours and cost, visibility) and four sections: context, scope, constraints, outcome. An import script validates every file with Pydantic, reports readable errors, skips duplicate ids, warns when a delivered project has no actuals (an estimate cannot be grounded without them), and has a dry-run mode that needs no database or key. Chunk ids look like `b001:outcome:0`, so a citation can be checked by eye.
+- *Retrieval:* BM25 runs in-process with `rank_bm25` over the filtered chunks, vector search runs in Postgres with cosine distance, and RRF merges the two lists. Filters run in SQL before ranking. A permission-style filter hides private briefs by default, and an exclude list lets evaluation run leave-one-out so a brief cannot retrieve itself. Embeddings sit behind the same kind of seam as the chat model, with a deterministic fake for tests.
+- *Generation:* the retrieved chunks go into the prompt as data, with their project actuals in the header. The output schema attaches citations to each risk and to the estimate. Code checks that each chunk id was retrieved, that the quote appears word for word in that chunk, and that an estimate range stays within a band around the cited projects' real hours or cost. A failure triggers a repair call that quotes the problem. If repairs run out, the unverifiable claim is dropped, flagged in the response, and the confidence is lowered, instead of failing the whole request. If nothing relevant is retrieved, the model must return a null estimate and code removes any invented one.
+
+**Honest limits.** I have not measured retrieval quality yet (no real briefs, no embedding key in use), so I cannot claim hybrid beats either search alone. The tests use a fake embedder that only captures shared words, so they prove the plumbing and not semantic quality. The estimate band (0.5x to 2x) is an arbitrary starting value. Citation checks prove a quote exists, not that it supports the claim.
+
+---
+
 ## Glossary
 - **RAG**: Retrieval-Augmented Generation; fetch relevant documents, then have the model answer using them.
 - **BM25**: keyword ranking function based on term frequency and rarity.
@@ -38,4 +58,9 @@
 - **FTS**: Full-Text Search (Postgres).
 - **HNSW**: graph index for approximate nearest-neighbor vector search.
 - **HITL**: Human-in-the-loop.
+- **Embedding**: a vector of numbers representing a text so that similar meanings are close.
+- **pgvector**: Postgres extension that stores embeddings and searches them by distance.
+- **Cosine similarity**: closeness of two vectors by angle, ignoring length.
+- **Chunk**: a piece of a document, the unit that is embedded and retrieved.
+- **Leave-one-out**: evaluating a case with its own source removed from the corpus.
 - **OTel**: OpenTelemetry; vendor-neutral tracing standard.

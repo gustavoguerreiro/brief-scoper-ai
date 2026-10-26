@@ -9,6 +9,7 @@ Retry wraps the logger so every attempt, including failed ones, is recorded.
 import json
 import logging
 import random
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -36,6 +37,7 @@ class ModelRequest:
     max_tokens: int = 4000
     purpose: str = "generate"
     run_id: str = ""
+    effort: str | None = None  # low | medium | high ...: thinking depth where supported
 
 
 @dataclass(frozen=True)
@@ -103,11 +105,13 @@ class AnthropicClient:
         a = self._anthropic
         start = time.perf_counter()
         try:
+            extra = {"output_config": {"effort": req.effort}} if req.effort else {}
             resp = self._client.messages.create(
                 model=req.model,
                 max_tokens=req.max_tokens,
                 system=req.system,
                 messages=req.messages,
+                **extra,
             )
         except (a.RateLimitError, a.APIConnectionError) as e:
             raise TransientModelError(str(e)) from e
@@ -148,9 +152,11 @@ class CallLog:
 
     path: Path | None = None
     records: list[CallRecord] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def add(self, rec: CallRecord) -> None:
-        self.records.append(rec)
+        with self._lock:
+            self.records.append(rec)
         logger.info(
             "llm_call run=%s purpose=%s model=%s in=%d out=%d cost=$%.6f %.0fms %s",
             rec.run_id,
@@ -166,8 +172,9 @@ class CallLog:
             logger.warning("llm_call run=%s hit max_tokens: output truncated", rec.run_id)
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(rec.__dict__) + "\n")
+            line = json.dumps(rec.__dict__) + "\n"
+            with self._lock, self.path.open("a", encoding="utf-8") as f:
+                f.write(line)
 
     def for_run(self, run_id: str) -> list[CallRecord]:
         return [r for r in self.records if r.run_id == run_id]

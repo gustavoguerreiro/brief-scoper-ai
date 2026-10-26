@@ -109,6 +109,7 @@ class Retriever:
         k: int = 5,
         mode: Mode = "hybrid",
         run_id: str = "",
+        per_brief_cap: int | None = None,
     ) -> list[Hit]:
         filters = filters or Filters()
         lists: dict[str, list[tuple[Chunk, float]]] = {}
@@ -127,7 +128,17 @@ class Retriever:
         else:
             (only,) = lists.values()
             fused = {c.id: s for c, s in only}
-        order = sorted(fused, key=lambda cid: fused[cid], reverse=True)[:k]
+        order = sorted(fused, key=lambda cid: fused[cid], reverse=True)
+        if per_brief_cap:  # diversity: at most N chunks from the same brief
+            seen: dict[str, int] = {}
+            kept = []
+            for cid in order:
+                b = by_id[cid].brief_id
+                if seen.get(b, 0) < per_brief_cap:
+                    kept.append(cid)
+                    seen[b] = seen.get(b, 0) + 1
+            order = kept
+        order = order[:k]
         return [
             Hit(by_id[cid], fused[cid], {n: r[cid] for n, r in ranks.items() if cid in r})
             for cid in order

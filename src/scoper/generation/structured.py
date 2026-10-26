@@ -63,6 +63,7 @@ def structured_call[T](
     max_repairs: int = 2,
     cost_cap_usd: float = 0.05,
     max_tokens: int = 4000,
+    effort: str | None = None,
 ) -> T:
     last_error, partial = "", None
     for attempt in range(max_repairs + 1):
@@ -76,6 +77,7 @@ def structured_call[T](
                 max_tokens=max_tokens,
                 purpose="generate" if attempt == 0 else "repair",
                 run_id=run_id,
+                effort=effort,
             )
         )
         try:

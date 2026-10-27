@@ -229,6 +229,75 @@ def run_pairwise(
         return list(pool.map(one, jobs))
 
 
+def run_planted(
+    rows: list[dict],
+    cases: dict[str, EvalCase],
+    sample_ids: list[str],
+    client: ModelClient,
+    log: CallLog,
+    model: str,
+    workers: int = 4,
+    max_cost: float | None = None,
+) -> list[dict]:
+    """Judge outputs with a KNOWN defect planted: alternate number swap / invented claim for
+    grounding, and generic boilerplate for actionability. Clean controls are the existing verdicts."""
+    from scoper.evals.perturb import inject_boilerplate, inject_invented_claim, inject_number_swap
+
+    start_spend = _spent(log)
+    by_id = {r["case_id"]: r for r in rows if r["output"] is not None}
+    jobs = []
+    for i, cid in enumerate(sample_ids):
+        src = by_id[cid]
+        if i % 2 == 0:
+            out, applied = inject_number_swap(src["output"], src["sources"])
+            if applied:
+                jobs.append((cid, "number_swap", "grounding", out, False))
+            else:  # no quotable number in the text: fall back to an invented claim
+                jobs.append(
+                    (
+                        cid,
+                        "invented_claim",
+                        "grounding",
+                        inject_invented_claim(src["output"], src["sources"]),
+                        True,
+                    )
+                )
+        else:
+            jobs.append(
+                (
+                    cid,
+                    "invented_claim",
+                    "grounding",
+                    inject_invented_claim(src["output"], src["sources"]),
+                    False,
+                )
+            )
+        jobs.append((cid, "boilerplate", "actionability", inject_boilerplate(src["output"]), False))
+
+    def one(job) -> dict:
+        cid, defect, crit, out, fallback = job
+        res = {"case_id": cid, "defect": defect, "criterion": crit, "fallback": fallback}
+        if max_cost is not None and _spent(log) - start_spend >= max_cost:
+            return {**res, "verdict": None, "reason": "skipped: max_cost reached"}
+        try:
+            v = judge_pointwise(
+                client,
+                log,
+                crit,
+                cases[cid].brief,
+                by_id[cid]["sources"],
+                out,
+                f"jx-{cid}-{defect}",
+                model,
+            )
+            return {**res, "verdict": v.verdict, "reason": v.reason}
+        except MODEL_ERRORS as e:
+            return {**res, "verdict": None, "reason": f"error: {e!r}"[:300]}
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(one, jobs))
+
+
 def pairwise_summary(rows: list[dict]) -> dict:
     ok = [r for r in rows if not r.get("skipped")]
     both_decisive = [r for r in ok if r["consistent"] and r["system_first_order"] != "tie"]
@@ -437,6 +506,35 @@ def _cmd_judge_pairwise(args) -> None:
     print(json.dumps(pairwise_summary(out), indent=1))
 
 
+def _cmd_judge_planted(args) -> None:
+    import os
+
+    from scoper.evals.perturb import summarize_planted
+
+    model = os.getenv("SCOPER_JUDGE_MODEL", "claude-opus-5-5")
+    log, client, _ = _runtime(need_retriever=False)
+    cases = {c.id: c for c in load_cases()}
+    sample = json.loads((LABELS_DIR / "sample.json").read_text(encoding="utf-8"))
+    out = run_planted(
+        read_jsonl(RUNS_DIR / "grounded_all.jsonl"),
+        cases,
+        sample,
+        client,
+        log,
+        model,
+        workers=args.workers,
+        max_cost=args.max_cost,
+    )
+    write_jsonl(RUNS_DIR / "judge_planted.jsonl", out)
+    clean = {
+        (r["case_id"], r["criterion"]): r["verdict"]
+        for r in read_jsonl(RUNS_DIR / "judge_pointwise.jsonl")
+        if r["system"] == "grounded" and r["verdict"]
+    }
+    print(f"judge {model}, cost ${_spent(log):.4f}")
+    print(json.dumps(summarize_planted(out, clean), indent=1))
+
+
 def _cmd_make_sample(args) -> None:
     ids = build_label_sample(read_jsonl(RUNS_DIR / "grounded_all.jsonl"))
     LABELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -445,7 +543,7 @@ def _cmd_make_sample(args) -> None:
 
 
 def _cmd_calibrate(args) -> None:
-    human = read_jsonl(LABELS_DIR / "human.jsonl")
+    human = read_jsonl(Path(args.labels) if args.labels else LABELS_DIR / "human.jsonl")
     judge = read_jsonl(RUNS_DIR / "judge_pointwise.jsonl")
     print(json.dumps(calibration_report(human, judge), indent=1))
 
@@ -476,8 +574,14 @@ def main(argv: list[str] | None = None) -> int:
         j.add_argument("--workers", type=int, default=4)
         j.add_argument("--max-cost", type=float, default=3.0)
         j.set_defaults(fn=fn)
+    jp = sub.add_parser("judge-planted")
+    jp.add_argument("--workers", type=int, default=4)
+    jp.add_argument("--max-cost", type=float, default=1.0)
+    jp.set_defaults(fn=_cmd_judge_planted)
     sub.add_parser("make-sample").set_defaults(fn=_cmd_make_sample)
-    sub.add_parser("calibrate").set_defaults(fn=_cmd_calibrate)
+    c = sub.add_parser("calibrate")
+    c.add_argument("--labels", default=None, help="labels file (default: evals/labels/human.jsonl)")
+    c.set_defaults(fn=_cmd_calibrate)
     args = ap.parse_args(argv)
     args.fn(args)
     return 0

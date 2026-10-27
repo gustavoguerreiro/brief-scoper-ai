@@ -1,0 +1,40 @@
+{"case_id": "e01", "criterion": "grounding", "label": "pass"}
+{"case_id": "e01", "criterion": "actionability", "label": "pass"}
+{"case_id": "e02", "criterion": "grounding", "label": "pass"}
+{"case_id": "e02", "criterion": "actionability", "label": "pass"}
+{"case_id": "e03", "criterion": "grounding", "label": "pass"}
+{"case_id": "e03", "criterion": "actionability", "label": "pass"}
+{"case_id": "e04", "criterion": "grounding", "label": "pass", "original": "pass", "adjudicated": true}
+{"case_id": "e04", "criterion": "actionability", "label": "pass"}
+{"case_id": "e05", "criterion": "grounding", "label": "pass"}
+{"case_id": "e05", "criterion": "actionability", "label": "pass"}
+{"case_id": "e07", "criterion": "grounding", "label": "fail", "original": "pass", "adjudicated": true}
+{"case_id": "e07", "criterion": "actionability", "label": "pass"}
+{"case_id": "e08", "criterion": "grounding", "label": "pass"}
+{"case_id": "e08", "criterion": "actionability", "label": "pass"}
+{"case_id": "e09", "criterion": "grounding", "label": "pass"}
+{"case_id": "e09", "criterion": "actionability", "label": "pass"}
+{"case_id": "e10", "criterion": "grounding", "label": "fail", "original": "pass", "adjudicated": true}
+{"case_id": "e10", "criterion": "actionability", "label": "pass"}
+{"case_id": "e11", "criterion": "grounding", "label": "pass"}
+{"case_id": "e11", "criterion": "actionability", "label": "pass"}
+{"case_id": "e12", "criterion": "grounding", "label": "pass"}
+{"case_id": "e12", "criterion": "actionability", "label": "pass"}
+{"case_id": "e13", "criterion": "grounding", "label": "pass"}
+{"case_id": "e13", "criterion": "actionability", "label": "pass"}
+{"case_id": "e14", "criterion": "grounding", "label": "pass"}
+{"case_id": "e14", "criterion": "actionability", "label": "pass"}
+{"case_id": "e15", "criterion": "grounding", "label": "pass"}
+{"case_id": "e15", "criterion": "actionability", "label": "pass"}
+{"case_id": "e17", "criterion": "grounding", "label": "pass"}
+{"case_id": "e17", "criterion": "actionability", "label": "pass"}
+{"case_id": "e18", "criterion": "grounding", "label": "pass"}
+{"case_id": "e18", "criterion": "actionability", "label": "pass"}
+{"case_id": "e20", "criterion": "grounding", "label": "pass"}
+{"case_id": "e20", "criterion": "actionability", "label": "pass"}
+{"case_id": "e21", "criterion": "grounding", "label": "fail", "original": "pass", "adjudicated": true}
+{"case_id": "e21", "criterion": "actionability", "label": "pass"}
+{"case_id": "e22", "criterion": "grounding", "label": "pass"}
+{"case_id": "e22", "criterion": "actionability", "label": "pass"}
+{"case_id": "e24", "criterion": "grounding", "label": "pass"}
+{"case_id": "e24", "criterion": "actionability", "label": "pass"}

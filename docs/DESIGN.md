@@ -313,5 +313,14 @@ Still open (will flag when reached): citation-to-estimate derivation rule (M2), 
 - **Run provenance:** every run row stores `name@version#hash` per prompt used. The gate fails if the recorded run does not match the active prompts (stale) or does not record them at all, so a prompt change cannot ship on the strength of results from the old one.
 - **Gate rules:** absolute floors per metric plus a regression check against a saved baseline (`max_regression` 0.05). A null floor means "not calibrated": the gate warns and skips it, and `--strict` turns skips into failures. Floors in `evals/thresholds.json` are chosen with a margin, not derived.
 - **Two CI tiers:** `ci.yml` runs on every push and PR, offline and free: lint, all tests (including the pipeline passing with a well-behaved fake and failing with a fabricating fake), the fake-embedding retrieval gate, and the recorded-results gate. `eval-real.yml` is manual (`workflow_dispatch`), spends real money under a cap (default 1.5 USD), and needs the two API keys as repository secrets. Prompt overrides are accepted only as `SCOPER_PROMPT_NAME=vN`.
-- **Gate scope:** dev split gates a candidate; the test split is read once at promotion time. Judge floors are empty until the judge has been calibrated (M3 is still waiting on the judge run).
+- **Gate scope:** dev split gates a candidate; the test split is read once at promotion time. Judge floors (grounding 0.65, actionability 0.85) were set after the M3 judge runs, with margin below the measured pass rates. They are a regression alarm: the judge is validated only on crude planted defects.
 - **Not verified:** the workflows have not run on GitHub (no push yet). Action versions (`checkout@v4`, `setup-uv@v5`, `upload-artifact@v4`) are from memory and should be checked on first run.
+
+---
+
+## 15. Judge validation notes (M3 completion)
+
+- **Calibration protocol outcome:** the blind human labels contained no failures, so kappa was degenerate (0.00 / undefined). Labels revised after reading the judge's reasons were rejected as contaminated. No valid human calibration exists.
+- **Planted-defect test (`perturb.py`, `runner judge-planted`):** known defects (a source number replaced by a wrong one, an invented claim, generic boilerplate questions and risks) are injected into 20 good outputs and the judge must fail them; the unmodified outputs are the controls. Ground truth is true by construction, so it does not need human labels. It reports detection counts with Wilson intervals.
+- **Remaining gap:** a sensitivity test with subtle defects (implied causality, correct-looking but unsupported generalizations) and independent human labels containing both classes. Until then the judge is trusted only for regression alarms.
+- **Position bias:** measured with order swaps (second-slot lean; verdict changes with order in about half the pairs). Pairwise judging must always run both orders, and pairwise results should not be used as a primary metric.

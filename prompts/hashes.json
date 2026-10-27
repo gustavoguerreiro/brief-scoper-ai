@@ -4,5 +4,6 @@
  "rubric_actionability/v1": "75a6d9110154",
  "rubric_grounding/v1": "82c6c74dba2d",
  "scope_baseline/v1": "ce823519b038",
- "scope_grounded/v1": "9ffe4a63b3e3"
+ "scope_grounded/v1": "9ffe4a63b3e3",
+ "scope_grounded_dspy/v1": "5c352c348f60"
 }

@@ -88,7 +88,13 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 def summarize_planted(rows: list[dict], clean: dict[tuple[str, str], str]) -> dict:
     """rows: planted-judge results. clean: {(case_id, criterion): verdict} on the unmodified outputs."""
     out: dict = {}
-    for kind in sorted({r["defect"] for r in rows}):
+    own_clean = {
+        (r["case_id"], r["criterion"]): r["verdict"]
+        for r in rows
+        if r["defect"] == "clean" and r["verdict"]
+    }
+    clean = own_clean or clean  # controls judged by the same judge win over passed-in ones
+    for kind in sorted({r["defect"] for r in rows} - {"clean"}):
         sel = [r for r in rows if r["defect"] == kind and r["verdict"]]
         caught = sum(r["verdict"] == "fail" for r in sel)
         out[kind] = {

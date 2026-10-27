@@ -238,6 +238,7 @@ def run_planted(
     model: str,
     workers: int = 4,
     max_cost: float | None = None,
+    include_clean: bool = False,
 ) -> list[dict]:
     """Judge outputs with a KNOWN defect planted: alternate number swap / invented claim for
     grounding, and generic boilerplate for actionability. Clean controls are the existing verdicts."""
@@ -273,6 +274,9 @@ def run_planted(
                 )
             )
         jobs.append((cid, "boilerplate", "actionability", inject_boilerplate(src["output"]), False))
+        if include_clean:  # unmodified controls judged by the SAME judge model
+            jobs.append((cid, "clean", "grounding", src["output"], False))
+            jobs.append((cid, "clean", "actionability", src["output"], False))
 
     def one(job) -> dict:
         cid, defect, crit, out, fallback = job
@@ -511,7 +515,7 @@ def _cmd_judge_planted(args) -> None:
 
     from scoper.evals.perturb import summarize_planted
 
-    model = os.getenv("SCOPER_JUDGE_MODEL", "claude-opus-5-5")
+    model = args.model or os.getenv("SCOPER_JUDGE_MODEL", "claude-opus-5-5")
     log, client, _ = _runtime(need_retriever=False)
     cases = {c.id: c for c in load_cases()}
     sample = json.loads((LABELS_DIR / "sample.json").read_text(encoding="utf-8"))
@@ -524,8 +528,9 @@ def _cmd_judge_planted(args) -> None:
         model,
         workers=args.workers,
         max_cost=args.max_cost,
+        include_clean=args.include_clean,
     )
-    write_jsonl(RUNS_DIR / "judge_planted.jsonl", out)
+    write_jsonl(Path(args.out) if args.out else RUNS_DIR / "judge_planted.jsonl", out)
     clean = {
         (r["case_id"], r["criterion"]): r["verdict"]
         for r in read_jsonl(RUNS_DIR / "judge_pointwise.jsonl")
@@ -577,6 +582,11 @@ def main(argv: list[str] | None = None) -> int:
     jp = sub.add_parser("judge-planted")
     jp.add_argument("--workers", type=int, default=4)
     jp.add_argument("--max-cost", type=float, default=1.0)
+    jp.add_argument(
+        "--model", default=None, help="judge model (default: SCOPER_JUDGE_MODEL / opus)"
+    )
+    jp.add_argument("--out", default=None)
+    jp.add_argument("--include-clean", action="store_true", help="also judge unmodified controls")
     jp.set_defaults(fn=_cmd_judge_planted)
     sub.add_parser("make-sample").set_defaults(fn=_cmd_make_sample)
     c = sub.add_parser("calibrate")

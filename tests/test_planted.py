@@ -91,3 +91,20 @@ def test_run_planted_and_summary_with_a_judge_that_flags_every_defect():
     clean = {(i, c): "pass" for i in ids for c in ("grounding", "actionability")}
     s = summarize_planted(res, clean)
     assert s["boilerplate"]["caught_as_fail"] == 4 and s["clean_grounding"]["passed"] == 4
+
+
+def test_include_clean_controls_are_judged_by_the_same_judge_and_win_in_the_summary():
+    cases = {c.id: c for c in load_cases()}
+    ids = ["e01", "e02"]
+    rows = [{"case_id": i, "output": OUT, "sources": SRC} for i in ids]
+    log = CallLog()
+    client = build_client(
+        FakeModel([json.dumps({"reason": "r", "verdict": "pass"})]),
+        log,
+        {"fake-model": {"input": 1.0, "output": 2.0}},
+        sleep=lambda s: None,
+    )
+    res = run_planted(rows, cases, ids, client, log, "fake-model", workers=1, include_clean=True)
+    assert sum(r["defect"] == "clean" for r in res) == 4  # 2 cases x 2 criteria
+    s = summarize_planted(res, {(i, "grounding"): "fail" for i in ids})  # passed-in map is ignored
+    assert s["clean_grounding"]["passed"] == 2 and "clean" not in s

@@ -40,3 +40,6 @@ every version once it exists, and a test fails if a frozen version is edited.
 - The gate floors in `evals/thresholds.json` were chosen by me with a margin below what I measured on 24 synthetic cases; they are not statistically derived.
 - With 16 dev and 8 test cases, one case moves a rate by 4 to 12 points. A pass is evidence of "no obvious breakage", not of improvement.
 - Prompts are not canary-released or A/B tested in production in this project.
+
+## DSPy artifacts
+`prompts/scope_grounded_dspy/vN.md` holds the DSPy Signature's instructions and is versioned like any other prompt. An optimizer run produces `prompts/dspy/<name>.json` (instructions plus few-shot demos). Treat it as a prompt version: run it on dev, gate it, read test once, and record its hash. Few-shot demos change the cost of every request, so compare cost per case, not only quality.

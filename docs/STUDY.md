@@ -90,6 +90,29 @@
 
 ---
 
+## M5. DSPy: prompts as programs, and optimizers
+
+**Concept (plain language).** DSPy lets you describe a language-model step as a program: a signature says what goes in and what comes out (for example a brief and some sources in, a typed scoping result out), and a module says how steps are chained. The framework turns that into the actual prompt. The key idea is that a prompt becomes something a program can improve. An optimizer takes your module, a small set of training examples and a metric, runs the program on the examples, keeps the runs that score well, and puts them into the prompt as worked examples (bootstrapping few-shot demos). More advanced optimizers also rewrite the instructions and search over many candidates. This only works when you have a metric that separates good from bad outputs and examples that represent real traffic. The optimizer cannot be better than the metric it is given.
+
+**Trade-offs / when NOT to use.**
+- DSPy removes hand-tuned prompt strings and gives a clean place to plug in an optimizer, but adds a dependency, hides the final prompt behind adapters, and its LM plug-in interface changed within a minor version (the custom-LM subclass I use is deprecated in 3.4 and removed in 3.5).
+- Few-shot demos raise the cost of every request: in my run the optimized program cost 1.82 times as much per case. Optimization is paid once, but the demo tokens are paid forever.
+- Optimizers need headroom: if the metric is already near its maximum, there is nothing to optimize. Mine was at the ceiling before I started.
+- Optimizers can overfit a small training set and the metric: they learn what the metric rewards. Use a held-out split, a metric the optimizer did not train against, and a noise estimate.
+- Do not use an optimizer when a prompt edit guided by reading failures would do, when you cannot afford the evaluation calls, or when the eval set is too small to tell a real gain from run-to-run variation.
+
+**How I built it (system-design explanation).**
+- *Rewrite:* the grounded generation step is a DSPy signature and module with a main predictor and a repair predictor. Retrieval, the deterministic citation checks, the repair loop and the dropping of unverifiable claims stay in my code, so DSPy can change the wording and the demos but cannot weaken the guarantees. The old pipeline stays as the production default.
+- *One model client:* DSPy would normally call the provider through its own library. I wrote a thin language-model adapter that forwards every call to my single client wrapper, so costs, retries and the fake model for tests all still work, and added a hard spend budget that stops an optimizer run.
+- *Optimizer and metric:* BootstrapFewShot, trained on the 16 development cases only. The metric gives half a point for passing all code checks and half for a grounding pass from a small, cheap judge. I validated that cheap judge first with the planted-defect test, then judged the held-out results with the stronger judge, so the optimizer was not graded by its own metric model.
+- *Evaluation:* before and after on the 8 held-out cases, plus a rerun of the unchanged production pipeline to measure noise, plus cost and latency per case.
+
+**Measured so far.** The optimizer kept 3 demos after trying only 3 of the 16 training examples, because it stops once it has enough passing traces; it did no search. The optimized program scored the same as the unoptimized one on every check and 8 of 8 on the strong judge's grounding verdicts, but the unoptimized DSPy program was already 8 of 8. The hand-written production pipeline scored 5 of 8 and then 7 of 8 on two identical runs. The optimized program was 1.82 times as expensive per request. So the optimizer's benefit is not measurable here, and its cost is.
+
+**Honest limits.** Eight held-out cases and single runs cannot show a real difference; the noise between two identical runs was larger than any gap. The metric was at its ceiling, so there was no room to improve. BootstrapFewShot is the simplest optimizer and did no search; I did not run MIPRO or random search, so I cannot say what they would do. There is no train-versus-test comparison, so I cannot quantify overfitting. The DSPy rewrite may be a better prompt than my hand-written one on the grounding judge (8 of 8 against 5 and 7 of 8), but that is not established either. The adapter relies on a deprecated DSPy interface.
+
+---
+
 ## Glossary
 - **RAG**: Retrieval-Augmented Generation; fetch relevant documents, then have the model answer using them.
 - **BM25**: keyword ranking function based on term frequency and rarity.
@@ -128,4 +151,11 @@
 - **Floor / regression check**: a minimum allowed metric value, versus a limit on how much it may drop from a baseline.
 - **Promotion / rollback**: making a new prompt version live, versus returning to the previous one.
 - **Provenance**: the record of exactly which prompt and model produced a result.
+- **Signature (DSPy)**: a declaration of a step's inputs and outputs, from which DSPy builds the prompt.
+- **Module (DSPy)**: a program that chains predictors and ordinary code.
+- **Optimizer / teleprompter (DSPy)**: a procedure that improves a module's prompts or demos against a metric.
+- **BootstrapFewShot**: runs the program on training examples and keeps passing runs as few-shot demos.
+- **MIPRO**: an optimizer that proposes and searches instruction and demo candidates (not run here).
+- **Few-shot demo**: a worked input-output example placed in the prompt.
+- **Overfitting (optimizer)**: improving on the training examples and metric without improving on new data.
 - **OTel**: OpenTelemetry; vendor-neutral tracing standard.

@@ -65,6 +65,31 @@
 
 ---
 
+## M4. Prompt versioning and a quality gate in CI
+
+**Concept (plain language).** A prompt is code that changes behavior, so it should be treated like code: stored in version control, reviewed, tested and released on purpose. Each change becomes a new immutable version, and one small file says which version is live. A quality gate is an automated check that turns eval results into pass or fail, so a bad change cannot slip through because someone forgot to look. Two kinds of rules are useful. A floor says a metric must not fall below a minimum, and a regression rule says it must not drop by more than a margin compared with the last accepted result. Cheap, deterministic checks run on every change in CI; expensive checks that call real models run only when someone asks. Promoting a version means changing the pointer after the gate passes, and rolling back means pointing at the previous version, which still exists unchanged.
+
+**Trade-offs / when NOT to use.**
+- Prompts in Git give diffs, review and easy rollback but need a code deploy to change; a database or prompt-management service allows live edits and A/B tests at the cost of another system and weaker review. For a small team, files win.
+- Floors catch disasters, regressions catch slow decay. Floors set too high make the gate flaky and teach people to ignore it; set too low they pass broken changes. Mine are chosen with a margin, not derived.
+- A gate on a small eval set is a smoke alarm, not a measurement. With 16 dev cases one case moves a rate by about 6 points, so a pass means "nothing obviously broke".
+- Gating on the judge is only valid after the judge is calibrated; otherwise you gate on noise. Uncalibrated checks should be loudly skipped, not silently passed.
+- Do not run real-model evals on every commit: they cost money, take minutes and vary from run to run. Keep per-commit CI offline and deterministic.
+- Do not tune thresholds or prompts on the data you report; use dev to decide and test to confirm.
+
+**How I built it (system-design explanation).**
+- *Prompt registry:* every prompt is a versioned file with placeholders, and an active pointer picks the version. A hash file freezes each version, and a test fails if a frozen version is edited, so history cannot be rewritten by accident. An environment variable can override a version for an experiment or an emergency rollback.
+- *Provenance:* every eval run row stores the exact prompt ids it used. The gate refuses results produced by a different prompt than the one currently active, or by an unrecorded one, which forces a rerun whenever a prompt changes.
+- *Gate:* a small program reads the results, applies floors and the regression check against a saved baseline, prints each finding and exits non-zero on any failure. Skipped checks are reported, and a strict mode makes them fail.
+- *CI:* on every push and pull request the pipeline lints, runs all offline tests, runs the retrieval gate with fake embeddings, and gates the recorded real-model run. The tests include the whole eval pipeline with a well-behaved scripted generator, which must pass the gate, and a generator that fabricates citations, which must fail it. A gate that cannot fail proves nothing, so the failing case is part of the suite. A separate manual workflow runs the real model with a spend cap against a Postgres service and uploads the artifacts.
+- *Process:* a written procedure covers adding a version, testing it by override on dev, confirming on test, promoting through one pull request, and rolling back by revert or by pointing at the previous version.
+
+**Measured so far.** The offline retrieval gate and the dev-split gate on the recorded run both pass, with the floors shown in `RESULTS.md`. The pipeline tests show the gate passing for a good generator and failing for a fabricating one.
+
+**Honest limits.** The GitHub workflows have never run on GitHub; I only checked that the YAML parses and ran the same commands locally. The floors are my choices on 24 synthetic cases. The judge is not calibrated yet, so no judge-based gate exists. Prompts are not tested in production traffic. Changing a judge prompt invalidates the human calibration, and the process says so but nothing enforces it automatically.
+
+---
+
 ## Glossary
 - **RAG**: Retrieval-Augmented Generation; fetch relevant documents, then have the model answer using them.
 - **BM25**: keyword ranking function based on term frequency and rarity.
@@ -98,4 +123,9 @@
 - **Calibration**: checking a judge against human labels before trusting it.
 - **Ceiling effect**: a test so easy that every system scores near the maximum, so it cannot rank them.
 - **Canary**: a marker string planted in a test input to detect that an injected instruction was followed.
+- **CI/CD**: Continuous Integration and Delivery; automatic checks and releases on every change.
+- **Quality gate**: an automated pass/fail check on eval results that blocks a change when it fails.
+- **Floor / regression check**: a minimum allowed metric value, versus a limit on how much it may drop from a baseline.
+- **Promotion / rollback**: making a new prompt version live, versus returning to the previous one.
+- **Provenance**: the record of exactly which prompt and model produced a result.
 - **OTel**: OpenTelemetry; vendor-neutral tracing standard.

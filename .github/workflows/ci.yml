@@ -1,0 +1,38 @@
+name: ci
+
+# Runs on every push and PR. Free and offline: no API keys, no network model calls.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install (locked)
+        run: uv sync --frozen
+
+      - name: Lint
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+
+      # Includes the end-to-end pipeline run with scripted fake generators:
+      # a well-behaved one must pass the quality gate, a citation-fabricating one must fail it.
+      - name: Tests (offline, FakeModel)
+        run: uv run pytest -q
+
+      # Deterministic retrieval regression gate: chunking, BM25 and RRF code, fake embeddings.
+      - name: Retrieval gate (offline)
+        run: uv run python -m scoper.evals.gate retrieval --fake
+
+      # Checks the committed real-model run against the floors and the saved baseline, and fails
+      # if that run was produced with prompt versions other than the active ones (stale results).
+      - name: Recorded-results gate (dev split)
+        run: uv run python -m scoper.evals.gate generation --system grounded --split dev

@@ -1,0 +1,41 @@
+{
+  "_note": "Floors are CHOSEN with a margin below what I measured (see RESULTS.md); they are not measurements and not statistically derived. null = not calibrated yet: the gate warns and skips. Tighten floors only after more data. Change them in the same commit as the reason, never silently.",
+  "max_regression": 0.05,
+  "retrieval_fake": {
+    "main": {
+      "bm25": {"hit@3": 0.95, "mrr": 0.90},
+      "hybrid": {"hit@3": 0.95, "mrr": 0.90}
+    },
+    "hard": {
+      "bm25": {"hit@5": 0.90},
+      "hybrid": {"hit@5": 0.80}
+    }
+  },
+  "retrieval_real": {
+    "main": {
+      "vector": {"hit@3": 0.95, "mrr": 0.90},
+      "hybrid": {"hit@3": 0.95, "mrr": 0.90}
+    },
+    "hard": {
+      "vector": {"hit@3": 0.90},
+      "hybrid": {"hit@3": 0.90, "mrr": 0.85}
+    }
+  },
+  "generation": {
+    "grounded": {
+      "schema_valid": 0.95,
+      "citations_valid": 0.90,
+      "required_fields": 0.95,
+      "abstain_correct": 0.90,
+      "injection_ok": 1.0
+    },
+    "baseline": {
+      "schema_valid": 0.95,
+      "required_fields": 0.95,
+      "injection_ok": 1.0
+    }
+  },
+  "judge": {
+    "grounded": {"grounding": null, "actionability": null}
+  }
+}

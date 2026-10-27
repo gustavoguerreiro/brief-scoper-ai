@@ -1,0 +1,8 @@
+{
+  "scope_baseline": "v1",
+  "scope_grounded": "v1",
+  "judge_pointwise": "v1",
+  "judge_pairwise": "v1",
+  "rubric_grounding": "v1",
+  "rubric_actionability": "v1"
+}

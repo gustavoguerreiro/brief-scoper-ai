@@ -302,3 +302,16 @@ Still open (will flag when reached): citation-to-estimate derivation rule (M2), 
 - **Concurrency and spend:** runs use a small thread pool, so a spend cap can be overshot by the cases already in flight. `CallLog` is lock-protected for this.
 - **Client changes:** `ModelResponse` and the log now carry `stop_reason`; `ModelRequest` has an optional `effort` passed to the provider; the retriever has a `per_brief_cap` option, evaluated but not yet adopted as the default.
 - **Open decision for later:** whether to adopt `per_brief_cap=2` in production, which depends on whether the judge shows better grounded answers. Estimate-band factors (0.5x and 2x) are still untuned and can now be tuned on dev cases.
+
+---
+
+## 14. Implementation notes and deviations (M4)
+
+- **Prompt storage:** files in Git (`prompts/<name>/vN.md`) with `active.json` as the promotion pointer, instead of the `prompt_versions` table of section 3. A prompt change is then a reviewable diff, promotion is a one-line change, and rollback is a revert. A table would be needed only if prompts had to change without a deploy; the environment override covers emergencies.
+- **What is versioned:** both generation prompts, both judge prompts and both rubrics. The judge is a measuring instrument; changing it invalidates the human calibration.
+- **Immutability:** `prompts/hashes.json` holds the hash of each version when it is first frozen; a test fails if a frozen version is edited. Resolution order: explicit version, then `SCOPER_PROMPT_<NAME>`, then `active.json`.
+- **Run provenance:** every run row stores `name@version#hash` per prompt used. The gate fails if the recorded run does not match the active prompts (stale) or does not record them at all, so a prompt change cannot ship on the strength of results from the old one.
+- **Gate rules:** absolute floors per metric plus a regression check against a saved baseline (`max_regression` 0.05). A null floor means "not calibrated": the gate warns and skips it, and `--strict` turns skips into failures. Floors in `evals/thresholds.json` are chosen with a margin, not derived.
+- **Two CI tiers:** `ci.yml` runs on every push and PR, offline and free: lint, all tests (including the pipeline passing with a well-behaved fake and failing with a fabricating fake), the fake-embedding retrieval gate, and the recorded-results gate. `eval-real.yml` is manual (`workflow_dispatch`), spends real money under a cap (default 1.5 USD), and needs the two API keys as repository secrets. Prompt overrides are accepted only as `SCOPER_PROMPT_NAME=vN`.
+- **Gate scope:** dev split gates a candidate; the test split is read once at promotion time. Judge floors are empty until the judge has been calibrated (M3 is still waiting on the judge run).
+- **Not verified:** the workflows have not run on GitHub (no push yet). Action versions (`checkout@v4`, `setup-uv@v5`, `upload-artifact@v4`) are from memory and should be checked on first run.

@@ -1,0 +1,8 @@
+{
+ "judge_pairwise/v1": "6fbf7d1ee274",
+ "judge_pointwise/v1": "e9f2968aef44",
+ "rubric_actionability/v1": "75a6d9110154",
+ "rubric_grounding/v1": "82c6c74dba2d",
+ "scope_baseline/v1": "ce823519b038",
+ "scope_grounded/v1": "9ffe4a63b3e3"
+}

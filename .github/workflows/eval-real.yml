@@ -1,0 +1,74 @@
+name: eval-real
+
+# On demand only (it spends real money). Run it from the Actions tab before promoting a prompt.
+# Needs repository secrets ANTHROPIC_API_KEY and OPENAI_API_KEY.
+on:
+  workflow_dispatch:
+    inputs:
+      max_cost:
+        description: "Hard spend cap in USD for generation"
+        default: "1.5"
+      prompt_overrides:
+        description: "Optional experiment, e.g. SCOPER_PROMPT_SCOPE_GROUNDED=v2 (leave empty for active prompts)"
+        default: ""
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: scoper
+          POSTGRES_PASSWORD: scoper
+          POSTGRES_DB: scoper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scoper"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://scoper:scoper@localhost:5432/scoper
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+
+      - name: Apply optional prompt override for this experiment
+        if: ${{ inputs.prompt_overrides != '' }}
+        env:
+          OVERRIDE: ${{ inputs.prompt_overrides }}
+        run: |
+          # Only accept NAME=vN for prompt overrides; never write arbitrary text into the environment.
+          echo "$OVERRIDE" | grep -Eq '^SCOPER_PROMPT_[A-Z_]+=v[0-9]+$' || { echo "bad override"; exit 1; }
+          echo "$OVERRIDE" >> "$GITHUB_ENV"
+
+      - name: Import briefs (real embeddings)
+        run: uv run python -m scoper.ingestion.importer data/briefs
+
+      - name: Retrieval gate (real embeddings)
+        run: uv run python -m scoper.evals.gate retrieval
+
+      - name: Generate (real model, capped)
+        run: uv run python -m scoper.evals.runner generate --system grounded --split all --max-cost ${{ inputs.max_cost }} --out evals/runs/ci_grounded.jsonl
+
+      - name: Generation gate (dev split)
+        run: uv run python -m scoper.evals.gate generation --system grounded --split dev --run evals/runs/ci_grounded.jsonl
+
+      - name: Generation report (test split, for the promotion decision)
+        if: always()
+        run: uv run python -m scoper.evals.gate generation --system grounded --split test --run evals/runs/ci_grounded.jsonl
+
+      - name: Keep the artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-runs
+          path: |
+            evals/runs/
+            logs/llm_calls.jsonl

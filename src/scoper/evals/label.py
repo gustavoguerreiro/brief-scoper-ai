@@ -10,7 +10,7 @@ import json
 import sys
 
 from scoper.evals.dataset import LABELS_DIR, RUNS_DIR, load_cases, read_jsonl
-from scoper.evals.judge import RUBRICS, render_sources_text
+from scoper.evals.judge import get_rubric, render_sources_text
 
 CRITERIA = ("grounding", "actionability")
 
@@ -32,7 +32,7 @@ def main() -> int:
     todo = [(cid, crit) for cid in sample for crit in CRITERIA if (cid, crit) not in done]
     print(f"{len(done)} labels saved, {len(todo)} to go. Rubrics:")
     for c in CRITERIA:
-        print(f"\n[{c}] {RUBRICS[c]}")
+        print(f"\n[{c}] {get_rubric(c)}")
     shown = None
     for cid, crit in todo:
         if shown != cid:

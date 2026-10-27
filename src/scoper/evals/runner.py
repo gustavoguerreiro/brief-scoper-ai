@@ -40,6 +40,7 @@ from scoper.generation.cited import generate_cited
 from scoper.generation.scope import generate_scope
 from scoper.generation.structured import BudgetExceeded, ScopeGenerationError
 from scoper.llm.client import CallLog, ModelClient, PermanentModelError, TransientModelError
+from scoper.prompts.registry import prompt_ids
 from scoper.retrieval.hybrid import Retriever
 
 MODEL_ERRORS = (ScopeGenerationError, BudgetExceeded, TransientModelError, PermanentModelError)
@@ -91,6 +92,7 @@ def run_generation(
             "error": "",
             "dropped": [],
             "sources": [],
+            "prompts": prompt_ids("scope_grounded" if system == "grounded" else "scope_baseline"),
         }
         t0 = time.perf_counter()
         if max_cost is not None and _spent(log) - start_spend >= max_cost:
@@ -161,7 +163,12 @@ def run_pointwise(
                 f"jp-{r['system']}-{r['case_id']}-{crit}",
                 model,
             )
-            return {**out, "verdict": v.verdict, "reason": v.reason}
+            return {
+                **out,
+                "verdict": v.verdict,
+                "reason": v.reason,
+                "prompts": prompt_ids("judge_pointwise", f"rubric_{crit}"),
+            }
         except MODEL_ERRORS as e:
             return {**out, "verdict": None, "reason": f"error: {e!r}"[:300]}
 
@@ -211,7 +218,12 @@ def run_pairwise(
                 "skipped": True,
                 "error": repr(e)[:300],
             }
-        return {"case_id": cid, "criterion": "actionability", **res}
+        return {
+            "case_id": cid,
+            "criterion": "actionability",
+            "prompts": prompt_ids("judge_pairwise", "rubric_actionability"),
+            **res,
+        }
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(one, jobs))
@@ -343,7 +355,7 @@ def _cmd_generate(args) -> None:
         max_cost=args.max_cost,
         per_brief_cap=args.per_brief_cap,
     )
-    path = RUNS_DIR / f"{args.system}_{args.split}.jsonl"
+    path = Path(args.out) if args.out else RUNS_DIR / f"{args.system}_{args.split}.jsonl"
     write_jsonl(path, rows)
     spent = sum(r["cost_usd"] for r in rows)
     print(f"{len(rows)} cases, cost ${spent:.4f}, wall {time.perf_counter() - t0:.0f}s -> {path}")
@@ -452,6 +464,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--workers", type=int, default=4)
     g.add_argument("--max-cost", type=float, default=2.0)
     g.add_argument("--per-brief-cap", type=int, default=None)
+    g.add_argument("--out", default=None, help="write the run file here (experiments)")
     g.set_defaults(fn=_cmd_generate)
     sub.add_parser("report").set_defaults(fn=_cmd_report)
     sub.add_parser("recheck").set_defaults(fn=_cmd_recheck)

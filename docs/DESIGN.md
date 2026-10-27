@@ -285,3 +285,20 @@ Still open (will flag when reached): citation-to-estimate derivation rule (M2), 
 - **Abstention:** with no retrieved sources the model is told to return `estimate: null`, and code drops any invented estimate. Score-threshold abstention is deferred to M3, where it can be calibrated instead of guessed.
 - **Approval workflow and `runs`/`outputs`/`human_edits` tables:** not in M2 (the milestone list does not include them); planned before M6, where the human-approval interrupt needs them.
 - **Port:** Compose publishes Postgres on host port 5440 because 5432 and 5433 are used by other containers on this machine.
+
+---
+
+## 13. Implementation notes and deviations (M3)
+
+- **Storage of eval artifacts:** cases, runs, judge verdicts and human labels are JSON lines under `evals/` (`cases.jsonl`, `retrieval_hard.jsonl`, `runs/`, `labels/`), not the `eval_cases` and `eval_results` tables of section 3. Files diff well in Git and need no database to reproduce a result; the tables can be added when results need querying across many runs.
+- **Eval inputs vs. leave-one-out:** the eval briefs are new texts, not corpus briefs, so a brief cannot retrieve itself and leave-one-out (`Filters.exclude_brief_ids`) is not used by the harness. It stays available for evaluating with corpus briefs as queries. A test asserts that no eval brief text appears in the corpus.
+- **Two retrieval sets:** the main set saturated at 1.000 for every method, so a second 10-case set of hard paraphrases was added. Both are reported. The hard set is retrieval-only (no generation) to keep real spend low.
+- **Splits:** each case is marked dev or test (16 and 8). Prompt and threshold tuning must use dev only; reported numbers should come from test, which M4 and M5 rely on. In this M3 the full-set results are reported because nothing has been tuned yet.
+- **Judge model and settings:** generator is `claude-sonnet-5-5`, judge is `claude-opus-5-5` (configurable with `SCOPER_JUDGE_MODEL`), at `effort: low`, with reason before verdict and one repair at most. A different tier reduces, but does not remove, self-preference.
+- **Criteria:** grounding (grounded pipeline only, since the baseline has no sources) and actionability (both systems). Pairwise compares baseline against grounded on actionability only, the one criterion that is fair to both.
+- **Position bias:** every pairwise comparison runs in both orders. Reported: consistency rate (same system wins in both orders), how often the same slot (A or B) was chosen both times, and the share of A, B and tie verdicts.
+- **Calibration protocol:** 20 of the grounded outputs are sampled with a fixed seed; the user labels pass or fail per criterion (up to 40 labels) without seeing judge verdicts. Kappa uses a percentile bootstrap interval, returns undefined when both raters use a single label, and the report shows each side's pass rate so a prevalence problem is visible.
+- **Check semantics:** `abstain_correct` means an estimate is present exactly when the case expects one. The injection check flags hijacking (the summary reduced to the canary, or an injected tiny estimate adopted), not quoting. `recheck` recomputes stored checks without new model calls.
+- **Concurrency and spend:** runs use a small thread pool, so a spend cap can be overshot by the cases already in flight. `CallLog` is lock-protected for this.
+- **Client changes:** `ModelResponse` and the log now carry `stop_reason`; `ModelRequest` has an optional `effort` passed to the provider; the retriever has a `per_brief_cap` option, evaluated but not yet adopted as the default.
+- **Open decision for later:** whether to adopt `per_brief_cap=2` in production, which depends on whether the judge shows better grounded answers. Estimate-band factors (0.5x and 2x) are still untuned and can now be tuned on dev cases.

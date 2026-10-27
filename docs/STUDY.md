@@ -39,6 +39,32 @@
 
 ---
 
+## M3. Evals first: retrieval metrics, code checks and a calibrated LLM judge
+
+**Concept (plain language).** An eval is a fixed set of test cases plus a way to score the system on them, so that "it seems better" becomes a number you can compare before and after a change. There are levels, and each one answers a different question. First, retrieval metrics ask whether the right past projects were found, with no model involved: hit@k is the share of cases where a correct project appears in the top k results, and MRR averages 1 divided by the position of the first correct result. Second, code checks ask hard yes/no questions that need no judgment: is the output valid, do the citations exist, did the system refuse when it should. Third, for open-ended quality, such as whether the risks are specific and the claims are supported, I use a language model as a judge, with one criterion per call and a written rubric. A judge is itself a measuring instrument that can be wrong, so I compare it with my own labels and report agreement, using Cohen's kappa, which discounts the agreement you would get by chance. I also swap answer order to check for position bias.
+
+**Trade-offs / when NOT to use.**
+- Code checks are exact and free but only see what you thought to check; mine passed 24 out of 24 and therefore could not rank anything. They are a floor, not a quality score.
+- An LLM judge scales where humans do not, but it has known biases: it may favor the first or last answer (position), longer answers (verbosity) or its own model family (self-preference), and it can be lenient. Use it only after calibration, and never as the only signal.
+- Pairwise comparison is easier for a judge than absolute scoring, but it only ranks two systems against each other and costs two calls per case because of the order swap. Pointwise gives a pass or fail per output, which is what I can calibrate against human labels.
+- With about 20 human labels, kappa has a very wide confidence interval, so it can only show gross disagreement. A kappa also breaks down when almost every label is the same class.
+- Do not build a judge when a code check can answer the question, and do not tune a prompt on the same cases you report. I split the cases into dev for tuning and test for reporting.
+- Evals written by the same author or model as the data look easier than real life.
+
+**How I built it (system-design explanation).**
+- *Eval set:* 24 cases stored as JSON lines, each with the new brief, the past briefs a person would call relevant, whether the correct answer is to abstain, an optional injection canary string, and a dev or test split. They cover typical briefs, paraphrases of corpus briefs, prompt-injection attempts, vague briefs and out-of-domain briefs. A second set of 10 hard paraphrases deliberately avoids the corpus vocabulary, for retrieval only, because the first set was too easy to separate the methods.
+- *Retrieval evals:* the harness ranks briefs from the fused chunk list and computes hit@1, 3 and 5 and MRR for BM25, vector, hybrid, and hybrid with at most two chunks per brief. It also reports how many distinct briefs sit in the top five chunks. Query embeddings are cached so comparing methods does not repeat paid calls.
+- *Generation checks:* plain code verifies schema validity, citation validity (nothing had to be dropped), required fields, correct abstention (an estimate exists exactly when the case expects one) and injection resistance. The injection check flags a hijacked output, not a mere quote of the injected text. I found that false positive by reading outputs, fixed the check, and recomputed the stored results at no cost.
+- *Judge:* a stronger model tier than the generator, to reduce self-preference. It receives the brief, the sources and the output as data, a rubric for one criterion, and returns the reason before the verdict. Grounding asks whether every claim about past projects is supported by the sources, which covers the free-text summary that citation checks cannot see. Actionability asks whether the risks and questions are specific to this brief. Pairwise runs both orders, maps verdicts back to systems, and reports consistency and how often the judge picked the same slot both times.
+- *Calibration:* a terminal tool shows me each sampled output blind to the judge and records pass or fail per criterion. A report joins my labels with the judge verdicts and prints agreement, kappa with a bootstrap interval, the confusion counts and each side's pass rate.
+- *Cost control:* every real run has a spend cap, and results are written to files so a failed or interrupted run can be inspected without paying again.
+
+**Measured so far.** On the main retrieval set every method scored 1.000, which only shows the set is too easy. On the hard paraphrase set (10 cases) BM25 reached MRR 0.808 while vector and hybrid reached 1.000, so vector alone matched hybrid. The grounded pipeline passed all code checks on 24 cases with no repairs, at a median of about 2 cents and 12 seconds per case; the baseline never produced an estimate by design. The judge, its position bias and the kappa are not measured yet.
+
+**Honest limits.** Everything runs on synthetic data written by one author, the eval cases included, so retrieval looks easier than it would on real briefs. The hard set has 10 cases, so one case moves a metric by 10 points. I have no judge numbers yet, and when I have them the 20 labels will give only a wide interval. The baseline comparison on abstention is close to trivial because its prompt forbids estimates. The judge shares an API provider and general training lineage with the generator, so some self-preference can remain even across model tiers.
+
+---
+
 ## Glossary
 - **RAG**: Retrieval-Augmented Generation; fetch relevant documents, then have the model answer using them.
 - **BM25**: keyword ranking function based on term frequency and rarity.
@@ -63,4 +89,13 @@
 - **Cosine similarity**: closeness of two vectors by angle, ignoring length.
 - **Chunk**: a piece of a document, the unit that is embedded and retrieved.
 - **Leave-one-out**: evaluating a case with its own source removed from the corpus.
+- **Eval set**: fixed test cases plus scoring rules, used to compare versions of the system.
+- **LLM-as-judge**: using a language model to grade another model's output against a rubric.
+- **Rubric**: written criteria that tell the judge exactly what pass and fail mean.
+- **Pointwise / pairwise**: grading one output on its own, versus choosing the better of two.
+- **Position bias**: a judge favoring an answer because of its slot (first or last), not its content.
+- **Self-preference**: a judge favoring outputs that resemble its own model family's style.
+- **Calibration**: checking a judge against human labels before trusting it.
+- **Ceiling effect**: a test so easy that every system scores near the maximum, so it cannot rank them.
+- **Canary**: a marker string planted in a test input to detect that an injected instruction was followed.
 - **OTel**: OpenTelemetry; vendor-neutral tracing standard.

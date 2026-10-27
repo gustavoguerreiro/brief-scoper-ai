@@ -350,6 +350,23 @@ def _cmd_generate(args) -> None:
     print(json.dumps(summarize_checks(rows), indent=1))
 
 
+def _cmd_recheck(args) -> None:
+    """Recompute code checks from stored outputs (free): use after fixing a check."""
+    cases = {c.id: c for c in load_cases()}
+    for p in sorted(RUNS_DIR.glob("*_all.jsonl")):
+        rows = read_jsonl(p)
+        if not rows or "checks" not in rows[0]:
+            continue
+        for r in rows:
+            r["checks"] = checks_dict(
+                check_output(
+                    cases[r["case_id"]], r["output"], r["dropped"], r["system"] == "grounded"
+                )
+            )
+        write_jsonl(p, rows)
+        print(p.name, json.dumps(summarize_checks(rows)))
+
+
 def _cmd_report(args) -> None:
     for p in sorted(RUNS_DIR.glob("*_*.jsonl")):
         rows = read_jsonl(p)
@@ -437,6 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--per-brief-cap", type=int, default=None)
     g.set_defaults(fn=_cmd_generate)
     sub.add_parser("report").set_defaults(fn=_cmd_report)
+    sub.add_parser("recheck").set_defaults(fn=_cmd_recheck)
     for name, fn in (
         ("judge-pointwise", _cmd_judge_pointwise),
         ("judge-pairwise", _cmd_judge_pairwise),
